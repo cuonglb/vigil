@@ -24,7 +24,7 @@ lazy_static! {
 
 pub struct ZulipNotifier;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct ZulipPayload<'a> {
     #[serde(rename(serialize = "type"))]
     type_: &'a str,
@@ -67,29 +67,57 @@ impl GenericNotifier for ZulipNotifier {
                 &APP_CONF.branding.page_url.as_str()
             ));
 
-            // Submit payload to Zulip
-            let payload = ZulipPayload {
-                type_: "stream",
-                to: &zulip.channel,
-                topic: "Vigil status",
-                content: &message_text,
-            };
+            let zulip_channels: Vec<String>;
 
-            let response = ZULIP_HTTP_CLIENT
-                .post(zulip.api_url.join("messages").unwrap().as_str())
-                .basic_auth(zulip.bot_email.clone(), Some(zulip.bot_api_key.clone()))
-                .form(&payload)
-                .send();
+            if let Some(zulip_channel) = &zulip.channel {
+                zulip_channels = vec![zulip_channel.to_string()];
+            } else {
+                zulip_channels = zulip.channels.clone().unwrap();
+            }
 
-            if let Ok(response_inner) = response {
-                if response_inner.status().is_success() == true {
-                    return Ok(());
-                } else {
-                    warn!(
-                        "could not submit data to zulip: {:?}",
-                        response_inner.text()
-                    );
+            let mut zulip_summit_results: Vec<bool> = vec![true; zulip_channels.len()];
+
+            for channel_index in 0..zulip_channels.len() {
+                let zulip_channel = &zulip_channels[channel_index].to_string();
+
+                info!("--- submit payload to zuplip channel: {:?}", zulip_channel);
+
+                // Submit payload to Zulip
+
+                let payload = ZulipPayload {
+                    type_: "stream",
+                    to: &zulip_channel,
+                    topic: "Vigil status",
+                    content: &message_text,
+                };
+
+                let response = ZULIP_HTTP_CLIENT
+                    .post(zulip.api_url.join("messages").unwrap().as_str())
+                    .basic_auth(zulip.bot_email.clone(), Some(zulip.bot_api_key.clone()))
+                    .form(&payload)
+                    .send();
+
+                if let Ok(response_inner) = response {
+                    if response_inner.status().is_success() == true {
+                        info!(
+                            "--- submitted payload to zuplip channel: {:?} successfully",
+                            zulip_channel
+                        );
+                    } else {
+                        zulip_summit_results[channel_index] = false;
+                        warn!(
+                            "could not submit data to zulip: {:?} - channel: {}",
+                            response_inner.text(),
+                            zulip_channel
+                        );
+                    }
                 }
+            }
+
+            let result: bool = zulip_summit_results.iter().all(|x| *x == true);
+
+            if result {
+                return Ok(());
             }
 
             return Err(true);

@@ -209,7 +209,8 @@ pub struct ConfigNotifySlack {
 pub struct ConfigNotifyZulip {
     pub bot_email: String,
     pub bot_api_key: String,
-    pub channel: String,
+    pub channel: Option<String>,
+    pub channels: Option<Vec<String>>,
     pub api_url: SerdeUrl,
 
     #[serde(default = "defaults::notify_generic_reminders_only")]
